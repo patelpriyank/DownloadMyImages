@@ -17,14 +17,12 @@
             </intent-filter>
         </activity>
 
+        <!--The colon prefix in front of the name tells Android that the Service is private to its declaring application. If the colon is not used, the Service would be a global process and can be used by other Android applications.-->
         <service
             android:name=".DownloadService"
+            android:process=":my_process"
             android:enabled="true"
             android:exported="true" >
-        </service>
-        <service
-            android:name=".MyIntentService"
-            android:exported="false" >
         </service>
     </application>
 

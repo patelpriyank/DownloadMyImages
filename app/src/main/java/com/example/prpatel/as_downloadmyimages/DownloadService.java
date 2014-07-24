@@ -6,14 +6,28 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
+import android.util.Base64;
+import android.util.Log;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URL;
 import java.util.logging.Handler;
 
 public class DownloadService extends Service {
+
+    ServiceHandler serviceHandler;
+    Looper bgThreadLooper;
+
+
     public DownloadService() {
     }
 
@@ -21,12 +35,45 @@ public class DownloadService extends Service {
     {
         super.onCreate();
 
+        HandlerThread bgThread = new HandlerThread("DownloadService");
+        bgThreadLooper = bgThread.getLooper();
+        serviceHandler = new ServiceHandler(bgThreadLooper);
+    }
+
+    //Called by the system every time a client explicitly starts the service by calling startService(Intent),
+    //providing the arguments it supplied and a unique integer token representing the start request.
+    // Do not call this method directly.
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+
+        //1. download image - send message to serviceHandler
+        Message downloadMsg = serviceHandler.MakeDownloadMessage(intent, startId);
+        serviceHandler.sendMessage(downloadMsg);
+
+        // Don't restart the DownloadService automatically if its
+        // process is killed while it's running.
+        return Service.START_NOT_STICKY;
+    }
+
+    @Override
+    public void onDestroy()
+    {
+        bgThreadLooper.quit();
+    }
+
+    /**
+     * This hook method is a no-op since we're a Start Service.
+     */
+    @Override
+    public IBinder onBind(Intent intent) {
+        // TODO: Return the communication channel to the service.
+        return null;
     }
 
     /**
      * Factory method to make the desired Intent.
      */
-    public static Intent makeIntent(Context context, Uri url, android.os.Handler downloadHandler)
+    public static Intent MakeIntent(Context context, Uri url, android.os.Handler downloadHandler)
     {
         //Make intent with
         // 1. context of component (UI Activity) who is planning to call this service
@@ -39,7 +86,7 @@ public class DownloadService extends Service {
         return downloadIntent;
     }
 
-    public static String extractDownloadedImagePath(Message msg)
+    public static String ExtractDownloadedImagePath(Message msg)
     {
         // Extract the data from Message, which is in the form
         // of a Bundle that can be passed across processes.
@@ -72,29 +119,97 @@ public class DownloadService extends Service {
 
         public void handleMessage(Message msg)
         {
-            //1. download requested image
-            //2. store image locally
-            //3. reply message back to component (DownloadActivity) with image url
-            downloadAndReplyMessage((Intent)msg.obj);
-
+            downloadAndReply((Intent) msg.obj);
         }
 
-        private void downloadAndReplyMessage(Intent intent) {
+        //spply startId to stopSelf(startId) StartId is helpful to keep track of currently running service requests and prevents service from terminating immaturely.
+        public Message MakeDownloadMessage(Intent intent, int startId)
+        {
+            //the best way to get one of these is to call Message.obtain() or one of the Handler.obtainMessage() methods, which will pull them from a pool of recycled objects.
+            Message msg = this.obtainMessage();
+            msg.obj = intent;
+            msg.arg1 = startId;
+
+            return msg;
+        }
+
+        private void downloadAndReply(Intent intent) {
+            //1. download requested image and store locally
             String imagePath = downloadImage(DownloadService.this, intent.getData().toString());
+
+            //2. reply message back to component (DownloadActivity) with image url
+            replyToComponent(imagePath, intent);
         }
 
-        private String downloadImage(Context downloadServiceClass, String s) {
+        private String downloadImage(Context downloadServiceClassContext, String url) {
+            try {
+                final File file = getTemporaryFile(downloadServiceClassContext, url);
+                Log.d(getClass().getName(), "    downloading to " + file);
+
+                //1. download image
+                final InputStream in = (InputStream)new URL(url).getContent();
+
+                //2. store image locally
+                final OutputStream out = new FileOutputStream(file);
+
+                copy(in, out);
+                in.close();
+                out.close();
+                return file.getAbsolutePath();
+            } catch (Exception e) {
+                Log.e(getClass().getName(),
+                        "Exception while downloading. Returning null.");
+                Log.e(getClass().getName(),
+                        e.toString());
+                e.printStackTrace();
+                return null;
+            }
         }
 
+        private void replyToComponent(String downloadedImageUrl, Intent intent)
+        {
+            Messenger componentMessenger = (Messenger)intent.getExtras().get("MESSENGER");
+
+        }
+
+        /**
+         * Create a file to store the result of a download.
+         *
+         * @param context
+         * @param url
+         * @return
+         * @throws IOException
+         */
+        private File getTemporaryFile(final Context context,
+                                      final String url) throws IOException {
+            return context.getFileStreamPath(Base64.encodeToString(url.getBytes(),
+                    Base64.NO_WRAP)
+                    + System.currentTimeMillis());
+        }
+
+        /**
+         * Copy the contents of an InputStream into an OutputStream.
+         *
+         * @param in
+         * @param out
+         * @return
+         * @throws IOException
+         */
+        private int copy(final InputStream in,
+                         final OutputStream out) throws IOException {
+            final int BUFFER_LENGTH = 1024;
+            final byte[] buffer = new byte[BUFFER_LENGTH];
+            int totalRead = 0;
+            int read = 0;
+
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+                totalRead += read;
+            }
+
+            return totalRead;
+        }
     }
 
-    /**
-     * This hook method is a no-op since we're a Start Service.
-     */
-    @Override
-    public IBinder onBind(Intent intent) {
-        // TODO: Return the communication channel to the service.
-        return null;
-    }
 
 }
