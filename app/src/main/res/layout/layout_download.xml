@@ -26,7 +26,8 @@
             android:layout_width="fill_parent"
             android:layout_height="wrap_content"
             android:inputType="text|textMultiLine"
-            android:hint="@string/defaultURL" />
+            android:hint="@string/defaultURL"
+            android:text="@string/defaultURL"/>
     </LinearLayout>
 
     <LinearLayout
@@ -57,7 +58,7 @@
         android:id="@+id/mImageView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:src="@drawable/ic_icon" >
+         >
     </ImageView>
 
 </LinearLayout>

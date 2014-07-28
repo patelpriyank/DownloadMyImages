@@ -11,6 +11,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.RemoteException;
 import android.util.Base64;
 import android.util.Log;
 
@@ -24,20 +25,25 @@ import java.util.logging.Handler;
 
 public class DownloadService extends Service {
 
-    ServiceHandler serviceHandler;
-    Looper bgThreadLooper;
-
+    private volatile ServiceHandler serviceHandler;
+    private volatile Looper bgThreadLooper;
 
     public DownloadService() {
     }
 
     public void onCreate()
     {
+        Log.d(getClass().getName(), "DownloadService.onCreate()");
+
         super.onCreate();
 
         HandlerThread bgThread = new HandlerThread("DownloadService");
+        bgThread.start();
+        Log.d(getClass().getName(), "HandlerThread.start()");
+
         bgThreadLooper = bgThread.getLooper();
         serviceHandler = new ServiceHandler(bgThreadLooper);
+        Log.d(getClass().getName(), "ServiceHandler(Looper)");
     }
 
     //Called by the system every time a client explicitly starts the service by calling startService(Intent),
@@ -46,9 +52,12 @@ public class DownloadService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
 
+        Log.d(getClass().getName(), "Downloadservice.onStartCommand()");
+
         //1. download image - send message to serviceHandler
         Message downloadMsg = serviceHandler.MakeDownloadMessage(intent, startId);
         serviceHandler.sendMessage(downloadMsg);
+        Log.d(getClass().getName(), "ServiceHandler.sendMessage");
 
         // Don't restart the DownloadService automatically if its
         // process is killed while it's running.
@@ -95,6 +104,8 @@ public class DownloadService extends Service {
         //Extract image path name from message
         String imagePath = data.getString("DOWNLOADED_IMAGE_PATH");
 
+        Log.d("DownloadService", "DownloadActivity.ExtractDownloadedImagePath from imagePath " + imagePath);
+
         //check if download was successful
         if(msg.arg1 != Activity.RESULT_OK || imagePath == null)
         {
@@ -119,7 +130,12 @@ public class DownloadService extends Service {
 
         public void handleMessage(Message msg)
         {
+            Log.d(getClass().getName(), "ServiceHandler.handleMessage");
             downloadAndReply((Intent) msg.obj);
+
+            // Stop the Service using the startId, so it doesn't stop
+            // in the middle of handling another download request.
+            stopSelf(msg.arg1);
         }
 
         //spply startId to stopSelf(startId) StartId is helpful to keep track of currently running service requests and prevents service from terminating immaturely.
@@ -134,9 +150,12 @@ public class DownloadService extends Service {
         }
 
         private void downloadAndReply(Intent intent) {
+
+            Log.d(getClass().getName(), "ServiceHandler.downloadAndReply");
             //1. download requested image and store locally
             String imagePath = downloadImage(DownloadService.this, intent.getData().toString());
 
+            Log.d(getClass().getName(), "Downloaded image at " + imagePath);
             //2. reply message back to component (DownloadActivity) with image url
             replyToComponent(imagePath, intent);
         }
@@ -168,8 +187,26 @@ public class DownloadService extends Service {
 
         private void replyToComponent(String downloadedImageUrl, Intent intent)
         {
+            Log.d(getClass().getName(), "ServiceHandler.replyToComponent with imageurl " + downloadedImageUrl);
             Messenger componentMessenger = (Messenger)intent.getExtras().get("MESSENGER");
 
+            Message message = Message.obtain();
+            // Return the result to indicate whether the download
+            // succeeded or failed.
+            message.arg1 = downloadedImageUrl == null ? Activity.RESULT_CANCELED : Activity.RESULT_OK;
+
+            Bundle data = new Bundle();
+
+            // Pathname for the downloaded image.
+            data.putString("DOWNLOADED_IMAGE_PATH", downloadedImageUrl);
+            message.setData(data);
+
+            try {
+                // Send pathname to back to the DownloadActivity.
+                componentMessenger.send(message);
+            } catch (RemoteException e) {
+                Log.e(getClass().getName(), "Exception while sending.", e);
+            }
         }
 
         /**

@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -34,6 +35,7 @@ public class DownloadActivity extends Activity {
         setContentView(R.layout.layout_download);
 
         mUrlEditText = (EditText) findViewById(R.id.mUrlEditText);
+        mImageView = (ImageView) findViewById(R.id.mImageView);
 
         //handler to handle communication back from Backend download service
         downloadHandler = new DownloadHandler(this);
@@ -62,6 +64,7 @@ public class DownloadActivity extends Activity {
     {
         //1. Make intent
         String imageUrl = getImageUrlFromTextBox();
+        Log.d(getClass().getName(), "downloading " + imageUrl);
         Intent downloadIntent = DownloadService.MakeIntent(this, Uri.parse(imageUrl), downloadHandler);
 
         ShowProgressDialog("Downloading image...");
@@ -77,15 +80,18 @@ public class DownloadActivity extends Activity {
 
     private void displayImage(Bitmap image)
     {
+        if (image != null && mImageView != null)
+            Log.d(getClass().getName(), "DownloadActivity.displayImage");
+
         //set downloaded image to ImageView
         if (mImageView == null)
-            showToastDialog("Problem with Application,"
-                    + " please contact the Developer.");
-        else if (image != null)
+            showToastDialog("Problem with Application, please contact the Developer.");
+        else if (image != null) {
+            Log.d(getClass().getName(), "DownloadActivity.setImageBitmap");
             mImageView.setImageBitmap(image);
+        }
         else
-            showToastDialog("image is corrupted,"
-                    + " please check the requested URL.");
+            showToastDialog("image is corrupted, please check the requested URL.");
     }
 
     public void ShowProgressDialog(String message)
@@ -127,6 +133,7 @@ public class DownloadActivity extends Activity {
         //handles response back from DownloadService's ServiceHandler
         public void handleMessage(Message svcReplyMsg)
         {
+            Log.d(getClass().getName(), "DownloadHandler.handleMessage: Received response back from service");
             DownloadActivity activity = mActivity.get();
 
             //if by this time, DownloadActivity was destroyed, then do nothing and just return.
